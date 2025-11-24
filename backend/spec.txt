@@ -1,0 +1,28 @@
+# Nutriabb — MVP Especificación Inicial
+
+## Módulo 1: Autenticación y Perfil
+- Registro/Login básico (por ahora con email y contraseña).
+- Campos mínimos en DB: user_id, email, password_hash, registration_date.
+- Perfil: edad, género, altura, peso, nivel de actividad.
+
+## Módulo 2: Calculadora Nutricional (Core)
+- Fórmula Mifflin-St Jeor para TMB.
+- Ajuste por nivel de actividad → calorías diarias.
+- Distribución de macros:
+  - Carbohidratos 45-60%
+  - Proteínas 10-20%
+  - Grasas 20-35%
+  - Fibra 25-30 g
+- Output esperado: calorías objetivo, gramos de carbs/prote/fat.
+
+## Base de Datos Inicial (Postgres)
+- Tabla `users`
+- Tabla `profiles` (relacionada con users)
+- Tabla `glucose_logs` (para pruebas futuras)
+- Tabla `ingredients` y `recipes` (estructura vacía, con seed data mínima más adelante)
+
+## Endpoints iniciales
+- `POST /auth/register` → crear usuario
+- `POST /auth/login` → login con email/password
+- `POST /profile` → guardar/actualizar perfil
+- `GET /calculate` → recibe perfil y devuelve calorías + macros
