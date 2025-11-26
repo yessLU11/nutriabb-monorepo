@@ -1,3 +1,6 @@
+console.log("➡️ Cargando authRoutes");
+
+
 const express = require('express');
 const AuthController = require('../controllers/AuthController');
 const { authenticateToken } = require('../middleware/authMiddleware');

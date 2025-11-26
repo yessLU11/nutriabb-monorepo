@@ -1,5 +1,5 @@
 const NutritionCalculatorService = require('../services/NutritionCalculatorService');
-const ProfileService = require('../services/ProfileService');
+const ProfileService = require('../services/ProfileService'); // no es clase
 const { asyncHandler } = require('../middleware/errorHandler');
 const { NotFoundError } = require('../utils/errors');
 
@@ -9,30 +9,27 @@ const { NotFoundError } = require('../utils/errors');
 class NutritionController {
   constructor() {
     this.nutritionCalculatorService = new NutritionCalculatorService();
-    this.profileService = new ProfileService();
   }
 
   /**
    * Calculate nutrition requirements for authenticated user
    * GET /calculate
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
    */
   calculateNutrition = asyncHandler(async (req, res) => {
-    // Get user ID from authenticated user (set by auth middleware)
     const userId = req.user.user_id;
 
-    // Get user profile through ProfileService
-    const profile = await this.profileService.getProfile(userId);
+    // CORRECTO: usar getProfileByUserId
+    const profile = await ProfileService.getProfileByUserId(userId);
 
     if (!profile) {
-      throw new NotFoundError('Profile not found. Please create a profile first to get nutrition calculations.');
+      throw new NotFoundError(
+        'Profile not found. Please create a profile first to get nutrition calculations.'
+      );
     }
 
-    // Calculate nutrition requirements using NutritionCalculatorService
+    // calculate nutrition
     const nutritionResults = this.nutritionCalculatorService.calculateNutrition(profile);
 
-    // Return success response with structured nutrition data
     res.status(200).json({
       message: 'Nutrition calculation completed successfully',
       data: {
@@ -42,7 +39,7 @@ class NutritionController {
           gender: profile.gender,
           height: profile.height,
           weight: profile.weight,
-          activity_level: profile.activity_level
+          activity_level: profile.activity_level,
         },
         nutrition: {
           calories: nutritionResults.calories,
@@ -51,24 +48,21 @@ class NutritionController {
             carbohydrates: nutritionResults.macros.carbohydrates,
             proteins: nutritionResults.macros.proteins,
             fats: nutritionResults.macros.fats,
-            fiber: nutritionResults.macros.fiber
+            fiber: nutritionResults.macros.fiber,
           },
           percentages: {
             carbohydrates: nutritionResults.percentages.carbohydrates,
             proteins: nutritionResults.percentages.proteins,
-            fats: nutritionResults.percentages.fats
-          }
-        }
+            fats: nutritionResults.percentages.fats,
+          },
+        },
       },
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   });
 
   /**
-   * Get activity level multipliers (informational endpoint)
    * GET /calculate/activity-levels
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
    */
   getActivityLevels = asyncHandler(async (req, res) => {
     const activityMultipliers = this.nutritionCalculatorService.getActivityMultipliers();
@@ -79,35 +73,32 @@ class NutritionController {
         activity_levels: {
           sedentary: {
             multiplier: activityMultipliers.sedentary,
-            description: 'Little or no exercise'
+            description: 'Little or no exercise',
           },
           light: {
             multiplier: activityMultipliers.light,
-            description: 'Light exercise/sports 1-3 days/week'
+            description: 'Light exercise/sports 1-3 days/week',
           },
           moderate: {
             multiplier: activityMultipliers.moderate,
-            description: 'Moderate exercise/sports 3-5 days/week'
+            description: 'Moderate exercise/sports 3-5 days/week',
           },
           active: {
             multiplier: activityMultipliers.active,
-            description: 'Hard exercise/sports 6-7 days a week'
+            description: 'Hard exercise/sports 6-7 days a week',
           },
           very_active: {
             multiplier: activityMultipliers.very_active,
-            description: 'Very hard exercise/sports & physical job'
-          }
-        }
+            description: 'Very hard exercise/sports & physical job',
+          },
+        },
       },
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   });
 
   /**
-   * Get macro distribution ranges (informational endpoint)
    * GET /calculate/macro-ranges
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
    */
   getMacroRanges = asyncHandler(async (req, res) => {
     const macroRanges = this.nutritionCalculatorService.getMacroRanges();
@@ -119,30 +110,28 @@ class NutritionController {
           carbohydrates: {
             min_percentage: macroRanges.carbohydrates.min,
             max_percentage: macroRanges.carbohydrates.max,
-            description: 'Primary energy source'
+            description: 'Primary energy source',
           },
           proteins: {
             min_percentage: macroRanges.proteins.min,
             max_percentage: macroRanges.proteins.max,
-            description: 'Muscle building and repair'
+            description: 'Muscle building and repair',
           },
           fats: {
             min_percentage: macroRanges.fats.min,
             max_percentage: macroRanges.fats.max,
-            description: 'Essential fatty acids and hormone production'
-          }
+            description: 'Essential fatty acids and hormone production',
+          },
         },
         fiber_recommendation: {
           min_grams: 25,
           max_grams: 30,
-          description: 'Daily fiber intake recommendation'
-        }
+          description: 'Daily fiber intake recommendation',
+        },
       },
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   });
-
-
 }
 
 module.exports = NutritionController;

@@ -1,152 +1,57 @@
+// backend/src/controllers/ProfileController.js
 const ProfileService = require('../services/ProfileService');
-const { asyncHandler } = require('../middleware/errorHandler');
-const { NotFoundError } = require('../utils/errors');
 
-/**
- * ProfileController - Handles profile-related HTTP requests
- */
-class ProfileController {
-  constructor() {
-    this.profileService = new ProfileService();
+async function createOrUpdateProfile(req, res) {
+  const userId = req.user.id; // viene del JWT → número
+  const profileData = req.body;
+
+  try {
+    const profile = await ProfileService.createOrUpdateProfile(userId, profileData);
+
+    return res.status(200).json({
+      message: "Perfil guardado correctamente",
+      data: profile
+    });
+
+  } catch (error) {
+    console.error("Error al crear/actualizar el perfil:", error);
+
+    return res.status(500).json({
+      error: "No se pudo guardar el perfil",
+      details: error.message
+    });
   }
-
-  /**
-   * Create or update user profile
-   * POST /profile
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   */
-  createOrUpdateProfile = asyncHandler(async (req, res) => {
-    // Get user ID from authenticated user (set by auth middleware)
-    const userId = req.user.user_id;
-    
-    // Extract profile data from request body
-    const { age, gender, height, weight, activity_level } = req.body;
-    
-    const profileData = {
-      age,
-      gender,
-      height,
-      weight,
-      activity_level
-    };
-
-    // Check if profile exists before operation
-    const existingProfile = await this.profileService.getProfile(userId);
-    const isUpdate = existingProfile !== null;
-
-    // Create or update profile through ProfileService
-    const profile = await this.profileService.createOrUpdateProfile(userId, profileData);
-
-    // Determine response based on operation type
-    const statusCode = isUpdate ? 200 : 201;
-    const message = isUpdate ? 'Profile updated successfully' : 'Profile created successfully';
-
-    // Return success response
-    res.status(statusCode).json({
-      message,
-      data: {
-        profile: {
-          profile_id: profile.profile_id,
-          user_id: profile.user_id,
-          age: profile.age,
-          gender: profile.gender,
-          height: profile.height,
-          weight: profile.weight,
-          activity_level: profile.activity_level,
-          created_at: profile.created_at,
-          updated_at: profile.updated_at
-        }
-      },
-      timestamp: new Date().toISOString()
-    });
-  });
-
-  /**
-   * Get user profile
-   * GET /profile
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   */
-  getProfile = asyncHandler(async (req, res) => {
-    // Get user ID from authenticated user (set by auth middleware)
-    const userId = req.user.user_id;
-
-    // Get profile through ProfileService
-    const profile = await this.profileService.getProfile(userId);
-
-    if (!profile) {
-      throw new NotFoundError('Profile');
-    }
-
-    // Return success response
-    res.status(200).json({
-      message: 'Profile retrieved successfully',
-      data: {
-        profile: {
-          profile_id: profile.profile_id,
-          user_id: profile.user_id,
-          age: profile.age,
-          gender: profile.gender,
-          height: profile.height,
-          weight: profile.weight,
-          activity_level: profile.activity_level,
-          created_at: profile.created_at,
-          updated_at: profile.updated_at
-        }
-      },
-      timestamp: new Date().toISOString()
-    });
-  });
-
-  /**
-   * Delete user profile
-   * DELETE /profile
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   */
-  deleteProfile = asyncHandler(async (req, res) => {
-    // Get user ID from authenticated user (set by auth middleware)
-    const userId = req.user.user_id;
-
-    // Delete profile through ProfileService
-    const deleted = await this.profileService.deleteProfile(userId);
-
-    if (!deleted) {
-      throw new NotFoundError('Profile');
-    }
-
-    // Return success response
-    res.status(200).json({
-      message: 'Profile deleted successfully',
-      timestamp: new Date().toISOString()
-    });
-  });
-
-  /**
-   * Check if user has a profile
-   * GET /profile/exists
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   */
-  checkProfileExists = asyncHandler(async (req, res) => {
-    // Get user ID from authenticated user (set by auth middleware)
-    const userId = req.user.user_id;
-
-    // Check if profile exists through ProfileService
-    const exists = await this.profileService.hasProfile(userId);
-
-    // Return success response
-    res.status(200).json({
-      message: 'Profile existence check completed',
-      data: {
-        exists
-      },
-      timestamp: new Date().toISOString()
-    });
-  });
-
-
 }
 
-module.exports = ProfileController;
+async function getProfile(req, res) {
+  const userId = req.user.id;
+
+  try {
+    const profile = await ProfileService.getProfileByUserId(userId);
+
+    if (!profile) {
+      return res.status(404).json({
+        message: "Perfil no encontrado",
+        data: null
+      });
+    }
+
+    return res.status(200).json({
+      message: "Perfil obtenido correctamente",
+      data: profile
+    });
+
+  } catch (error) {
+    console.error("Error al obtener el perfil:", error);
+
+    return res.status(500).json({
+      error: "No se pudo obtener el perfil",
+      details: error.message
+    });
+  }
+}
+
+module.exports = {
+  createOrUpdateProfile,
+  getProfile
+};

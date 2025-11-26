@@ -1,40 +1,18 @@
+console.log("➡️ Cargando profileRoutes");
+
+
 const express = require('express');
-const ProfileController = require('../controllers/ProfileController');
-const { authenticateToken } = require('../middleware/authMiddleware');
-const { validate } = require('../middleware/validationMiddleware');
-const { asyncHandler } = require('../middleware/errorHandler');
-const schemas = require('../validation/schemas');
-
 const router = express.Router();
-const profileController = new ProfileController();
 
-// CREATE / UPDATE PROFILE
-router.post(
-  '/',
-  authenticateToken,
-  validate(schemas.profile.create),
-  asyncHandler(profileController.createOrUpdateProfile.bind(profileController))
-);
+// Importar correctamente el middleware desde middleware/authMiddleware.js
+const { authenticateToken } = require('../middleware/authMiddleware');
 
-// GET PROFILE
-router.get(
-  '/',
-  authenticateToken,
-  asyncHandler(profileController.getProfile.bind(profileController))
-);
+const { createOrUpdateProfile, getProfile } = require('../controllers/ProfileController');
 
-// DELETE PROFILE
-router.delete(
-  '/',
-  authenticateToken,
-  asyncHandler(profileController.deleteProfile.bind(profileController))
-);
+// Ruta para crear o actualizar el perfil (requiere token)
+router.post('/', authenticateToken, createOrUpdateProfile);
 
-// CHECK PROFILE EXISTS
-router.get(
-  '/exists',
-  authenticateToken,
-  asyncHandler(profileController.checkProfileExists.bind(profileController))
-);
+// Ruta para obtener el perfil del usuario autenticado (requiere token)
+router.get('/', authenticateToken, getProfile);
 
 module.exports = router;

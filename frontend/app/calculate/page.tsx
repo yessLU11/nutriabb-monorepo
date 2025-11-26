@@ -1,59 +1,222 @@
 "use client";
-
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export default function CalculatePage() {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL;
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
+  const [form, setForm] = useState({
+    peso: "",
+    altura: "",
+    edad: "",
+    sexo: "",
+    actividad: "",
+    objetivo: "",
+  });
 
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const [result, setResult] = useState<any | null>(null);
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const res = await fetch(`${API_URL}/calculate`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+  const handleChange = (e: any) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  };
 
-        const json = await res.json();
+  const calcular = () => {
+    const peso = Number(form.peso);
+    const altura = Number(form.altura);
+    const edad = Number(form.edad);
 
-        if (res.ok) {
-          setData(json.data);
-        }
-      } catch (err) {
-        console.log(err);
-      } finally {
-        setLoading(false);
-      }
+    if (!peso || !altura || !edad || !form.sexo) {
+      alert("Por favor completa todos los campos obligatorios.");
+      return;
     }
 
-    if (token) loadData();
-  }, [token, API_URL]);
+    // Fórmula Mifflin‑St Jeor
+    const bmr =
+      form.sexo === "masculino"
+        ? 10 * peso + 6.25 * altura - 5 * edad + 5
+        : 10 * peso + 6.25 * altura - 5 * edad - 161;
 
-  if (loading) return <p className="p-6">Cargando...</p>;
+    const factores: any = {
+      sedentario: 1.2,
+      ligero: 1.375,
+      moderado: 1.55,
+      pesado: 1.725,
+    };
 
-  if (!data) return <p className="p-6">No hay datos, completa tu perfil.</p>;
+    const tdee = bmr * (factores[form.actividad] || 1.2);
 
-  const n = data.nutrition;
+    const ajuste =
+      form.objetivo === "subir"
+        ? 300
+        : form.objetivo === "bajar"
+        ? -300
+        : 0;
+
+    const caloriasFinales = tdee + ajuste;
+
+    setResult({
+      bmr: Math.round(bmr),
+      tdee: Math.round(tdee),
+      calorias: Math.round(caloriasFinales),
+      proteina: Math.round(peso * 2),
+      grasa: Math.round((caloriasFinales * 0.25) / 9),
+      carbohidratos: Math.round(
+        (caloriasFinales -
+          (peso * 2 * 4 + (caloriasFinales * 0.25))) /
+          4
+      ),
+    });
+  };
 
   return (
-    <div className="min-h-screen p-6">
-      <h1 className="text-2xl font-bold mb-4">Tu nutrición diaria</h1>
+    <div className="max-w-xl mx-auto py-8">
+      <h1 className="text-3xl font-bold text-center mb-6 text-green-700">
+        🥑 Calculadora Nutricional
+      </h1>
 
-      <p><b>Calorías:</b> {n.calories} kcal</p>
-      <p><b>BMR:</b> {n.bmr}</p>
+      <p className="text-center text-gray-600 mb-8">
+        Completa tus datos para conocer tus calorías diarias y distribución de
+        macronutrientes.  
+        <span className="font-semibold">Diseño centrado en el usuario ✔</span>
+      </p>
 
-      <h2 className="font-semibold mt-4">Macronutrientes</h2>
-      <p>Carbohidratos: {n.macros.carbohydrates} g</p>
-      <p>Proteínas: {n.macros.proteins} g</p>
-      <p>Grasas: {n.macros.fats} g</p>
-      <p>Fibra: {n.macros.fiber} g</p>
+      <div className="space-y-4 bg-white p-6 rounded-lg shadow-lg border border-gray-200">
+        {/* PESO */}
+        <div>
+          <label className="block mb-1 font-medium text-gray-700">
+            Peso (kg)
+          </label>
+          <input
+            name="peso"
+            type="number"
+            value={form.peso}
+            onChange={handleChange}
+            className="input"
+            placeholder="Ej: 60"
+          />
+        </div>
 
-      <a href="/home" className="block w-full bg-black text-white p-3 rounded-lg mt-6 text-center">
-        Volver
-      </a>
+        {/* ALTURA */}
+        <div>
+          <label className="block mb-1 font-medium text-gray-700">
+            Altura (cm)
+          </label>
+          <input
+            name="altura"
+            type="number"
+            value={form.altura}
+            onChange={handleChange}
+            className="input"
+            placeholder="Ej: 165"
+          />
+        </div>
+
+        {/* EDAD */}
+        <div>
+          <label className="block mb-1 font-medium text-gray-700">
+            Edad
+          </label>
+          <input
+            name="edad"
+            type="number"
+            value={form.edad}
+            onChange={handleChange}
+            className="input"
+            placeholder="Ej: 25"
+          />
+        </div>
+
+        {/* SEXO */}
+        <div>
+          <label className="block mb-1 font-medium text-gray-700">
+            Sexo
+          </label>
+          <select
+            name="sexo"
+            value={form.sexo}
+            onChange={handleChange}
+            className="input"
+          >
+            <option value="">Selecciona una opción</option>
+            <option value="masculino">Masculino ♂</option>
+            <option value="femenino">Femenino ♀</option>
+          </select>
+        </div>
+
+        {/* ACTIVIDAD */}
+        <div>
+          <label className="block mb-1 font-medium text-gray-700">
+            Nivel de actividad
+          </label>
+          <select
+            name="actividad"
+            value={form.actividad}
+            onChange={handleChange}
+            className="input"
+          >
+            <option value="">Selecciona una opción</option>
+            <option value="sedentario">Sedentario 🛋️</option>
+            <option value="ligero">Ligero 🚶</option>
+            <option value="moderado">Moderado 🏃‍♀️</option>
+            <option value="pesado">Pesado 💪</option>
+          </select>
+        </div>
+
+        {/* OBJETIVO */}
+        <div>
+          <label className="block mb-1 font-medium text-gray-700">
+            Objetivo
+          </label>
+          <select
+            name="objetivo"
+            value={form.objetivo}
+            onChange={handleChange}
+            className="input"
+          >
+            <option value="">Selecciona</option>
+            <option value="subir">Subir peso ⬆</option>
+            <option value="bajar">Bajar peso ⬇</option>
+            <option value="mantener">Mantener ⚖</option>
+          </select>
+        </div>
+
+        <button
+          onClick={calcular}
+          className="w-full py-3 mt-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transform active:scale-95 transition"
+        >
+          Calcular resultados ✨
+        </button>
+      </div>
+
+      {/* RESULTADOS */}
+      {result && (
+        <div className="mt-8 bg-green-50 border border-green-200 shadow-md p-6 rounded-lg">
+          <h2 className="text-xl font-bold text-green-700 mb-4">
+            🧾 Tus resultados nutricionales
+          </h2>
+
+          <div className="space-y-2 text-gray-800">
+            <p><strong>Calorías diarias:</strong> {result.calorias} kcal</p>
+            <p><strong>Proteína:</strong> {result.proteina} g</p>
+            <p><strong>Grasas:</strong> {result.grasa} g</p>
+            <p><strong>Carbohidratos:</strong> {result.carbohidratos} g</p>
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        .input {
+          width: 100%;
+          padding: 10px 12px;
+          border-radius: 8px;
+          border: 1px solid #d1d5db;
+          background: #f9fafb;
+          transition: 0.2s;
+        }
+        .input:focus {
+          outline: none;
+          border-color: #34d399;
+          background: white;
+          box-shadow: 0 0 0 2px #bbf7d0;
+        }
+      `}</style>
     </div>
   );
 }

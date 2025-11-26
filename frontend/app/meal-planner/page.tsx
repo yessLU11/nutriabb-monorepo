@@ -1,74 +1,75 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { breakfastData } from "../recipes/_data/breakfastData";
+import { lunchData } from "../recipes/_data/lunchData";
+import { dinnerData } from "../recipes/_data/dinnerData";
+import { snacksData } from "../recipes/_data/snacksData";
+
+import { useState } from "react";
+import { generateWeeklyPlan, MealPlanDay } from "./_utils/generateWeek";
 
 export default function MealPlannerPage() {
-  const daysOfWeek = [
-    "Lunes",
-    "Martes",
-    "Miércoles",
-    "Jueves",
-    "Viernes",
-    "Sábado",
-    "Domingo",
-  ];
+  const [plan, setPlan] = useState<MealPlanDay[] | null>(null);
 
-  const STORAGE_KEY = "weekly_meal_plan";
+  const macrosEjemplo = {
+    protein: 100,
+    carbs: 200,
+    fats: 60,
+    calories: 1800,
+  };
 
-  const [plans, setPlans] = useState<any>({});
-
-  // 🔹 Cargar datos desde LocalStorage al iniciar
-  useEffect(() => {
-    const savedPlans = localStorage.getItem(STORAGE_KEY);
-
-    if (savedPlans) {
-      setPlans(JSON.parse(savedPlans));
-    } else {
-      // Si no existe, crear estructura vacía
-      const empty = daysOfWeek.reduce((acc: any, day) => {
-        acc[day] = "";
-        return acc;
-      }, {});
-
-      setPlans(empty);
-    }
-  }, []);
-
-  // 🔹 Guardar en LocalStorage cada vez que cambia
-  useEffect(() => {
-    if (Object.keys(plans).length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(plans));
-    }
-  }, [plans]);
-
-  const handleChange = (day: string, value: string) => {
-    setPlans((prev: any) => ({
-      ...prev,
-      [day]: value,
-    }));
+  const generarPlan = () => {
+    const newPlan = generateWeeklyPlan(macrosEjemplo);
+    setPlan(newPlan);
   };
 
   return (
-    <div className="min-h-screen p-6">
-      <h1 className="text-2xl font-bold mb-6">Planificación Semanal</h1>
+    <div className="p-6 max-w-3xl mx-auto">
+      <h1 className="text-3xl font-bold text-center mb-4">
+        🗓️ Planificador Semanal Nutriabb
+      </h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {daysOfWeek.map((day) => (
-          <div
-            key={day}
-            className="p-4 bg-white shadow rounded-xl flex flex-col"
-          >
-            <h2 className="text-xl font-semibold mb-2">{day}</h2>
+      <button
+        onClick={generarPlan}
+        className="bg-green-500 text-white px-4 py-2 rounded-lg mb-6 hover:bg-green-600"
+      >
+        Generar nuevo plan semanal
+      </button>
 
-            <textarea
-              className="border rounded-lg p-3 w-full h-32 text-sm"
-              placeholder={`Planifica tu comida del ${day}`}
-              value={plans[day] || ""}
-              onChange={(e) => handleChange(day, e.target.value)}
-            />
-          </div>
-        ))}
-      </div>
+      {!plan && (
+        <p className="text-center text-gray-600">
+          Haz clic para generar tu plan 🍏
+        </p>
+      )}
+
+      {plan && (
+        <div className="space-y-6">
+          {plan.map((day) => (
+            <div key={day.day} className="bg-white p-4 shadow rounded-lg">
+              <h2 className="text-xl font-bold mb-3">{day.day}</h2>
+
+              <p>
+                <strong>Desayuno:</strong> {day.breakfast.title}
+              </p>
+              <p>
+                <strong>Almuerzo:</strong> {day.lunch.title}
+              </p>
+              <p>
+                <strong>Cena:</strong> {day.dinner.title}
+              </p>
+
+              <p className="mt-2">
+                <strong>Snacks:</strong>
+              </p>
+              <ul className="list-disc ml-6">
+                {day.snacks.map((snack, i) => (
+                  <li key={i}>{snack.title}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

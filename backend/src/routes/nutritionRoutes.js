@@ -1,3 +1,6 @@
+console.log("➡️ Cargando nutritionRoutes");
+
+
 const express = require('express');
 const NutritionController = require('../controllers/NutritionController');
 const { authenticateToken } = require('../middleware/authMiddleware');

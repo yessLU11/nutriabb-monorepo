@@ -1,627 +1,446 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { API_URL } from "@/config";
 
-import { runHealthCheck, autoFixHealth } from "@/utils/healthCheck";
-
-
-
-
-
-/**
- * Perfil (FASE 3) - Single file
- * - All UI in one file (accordion, validation visual, autosave local every 1s)
- * - Sends only original fields to backend on submit
- * - Persists extras to localStorage
- * - Defensive: handles SSR (checks typeof window)
- */
-
-/* ---------------- helpers ---------------- */
-const safeJSONParse = (str: string | null, fallback: any) => {
-  try {
-    return str ? JSON.parse(str) : fallback;
-  } catch {
-    return fallback;
-  }
+type FormShape = {
+  nombre: string;
+  edad: string;
+  sexo: string;
+  peso: string;
+  altura: string;
+  objetivo: string;
+  actividad: string;
+  glucosa: string;
+  intoleranciaLactosa: string;
+  celiaco: string;
+  alergias: string;
+  condiciones: string;
+  estadoFisiologico: string;
+  comidas: string;
+  evitarAlimentos: string;
 };
-const normalize = (v: any) => (v === null || v === undefined ? "" : v);
-const normalizeBool = (v: any) => (v === null || v === undefined ? false : Boolean(v));
 
-/* ---------------- initial keys --------------- */
-const LOCAL_KEY = "profile_local_v3";
+const initialForm: FormShape = {
+  nombre: "",
+  edad: "",
+  sexo: "",
+  peso: "",
+  altura: "",
+  objetivo: "",
+  actividad: "",
+  glucosa: "",
+  intoleranciaLactosa: "",
+  celiaco: "",
+  alergias: "",
+  condiciones: "",
+  estadoFisiologico: "",
+  comidas: "",
+  evitarAlimentos: "",
+};
 
-/* ---------------- component ---------------- */
+const Card = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <section className="bg-card border-card p-5 rounded-xl shadow-card mb-6">
+    <h2 className="text-lg font-semibold mb-3 text-accent">{title}</h2>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>
+  </section>
+);
+
 export default function ProfilePage() {
   const router = useRouter();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-
-  // loading + messages
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<FormShape>(initialForm);
 
-  // saving indicator (autosave)
-  const [syncing, setSyncing] = useState(false);
-  const isMounted = useRef(false);
-
-  // accordion state
-  const [openSection, setOpenSection] = useState<string | null>(null);
-
-  // validation
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  // form state (includes originals + extras + health)
-  const [form, setForm] = useState({
-    // original (backend)
-    age: "",
-    gender: "",
-    height: "",
-    weight: "",
-    activity_level: "",
-
-    // extras (local)
-    weight_goal: "",
-    body_fat: "",
-    lean_mass: "",
-    meals_per_day: "",
-    allergies: "",
-    dislikes: "",
-    diet_type: "",
-
-    // health toggles
-    diabetes: "none",
-    hypertension: false,
-    cholesterol: false,
-    renal: false,
-    celiac: false,
-    lactose: false,
-  });
-
-  // dirty flag for autosave
-  const dirtyRef = useRef(false);
-
-  // read token (reactive)
-  const [token, setToken] = useState<string | null>(null);
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setToken(localStorage.getItem("token"));
-    }
+    loadProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+async function loadProfile() {
+  try {
+    const token = localStorage.getItem("token");
+    if (!token) return router.push("/auth/login");
 
+    const res = await fetch(`${API_URL}/profile`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-  useEffect(() => {
-    async function verify() {
-      const check = await runHealthCheck(API_URL);
-
-      console.log("HealthCheck:", check);
-
-      const fixed = autoFixHealth(check);
-
-      if (fixed || !check.token) {
-        router.push("/auth/login");
-        return;
-      }
-
-      if (check.backendOK && !check.profileOK) {
-        console.warn("⚠ No existe perfil en backend");
-      }
+    // 🔥 Si el token expiró → ir al login
+    if (res.status === 401) {
+      alert("Tu sesión expiró. Inicia sesión nuevamente.");
+      localStorage.removeItem("token");
+      return router.push("/auth/login");
     }
 
-    verify();
-  }, [API_URL]);
-
-
-
-
-
-
-
-
-  // protect route (after token load)
-  useEffect(() => {
-    if (token === null) return; // wait for token read
-    if (!token) router.push("/auth/login");
-  }, [token, router]);
-
-  // load localStorage + backend merge safely
-  useEffect(() => {
-    function loadLocal() {
-      if (typeof window === "undefined") return {};
-      return safeJSONParse(localStorage.getItem(LOCAL_KEY), {});
+    if (!res.ok) {
+      console.error("Error cargando perfil:", res.status);
+      return;
     }
 
-    async function fetchProfile() {
-      const localData = loadLocal();
+    const json = await res.json();
 
-      if (!API_URL || !token) {
-        // if no backend, just load local values (merge with defaults)
-        setForm((prev) => ({ ...prev, ...localData }));
-        setLoading(false);
-        return;
-      }
+    // Asegura que data exista
+    const profile = json?.data || json || {};
+    setForm((prev) => ({ ...prev, ...profile }));
+    setEditing(Boolean(json?.data));
 
-      try {
-        const res = await fetch(`${API_URL}/profile`, {
-          headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-        });
-
-        const text = await res.text();
-        let data: any = null;
-        try {
-          data = text ? JSON.parse(text) : null;
-        } catch {
-          data = null;
-        }
-
-        if (res.ok) {
-          const backend = data?.data ?? {};
-          // merge carefully: backend originals + local extras
-          setForm((prev) => ({
-            ...prev,
-            age: normalize(backend.age ?? localData.age ?? prev.age),
-            gender: normalize(backend.gender ?? localData.gender ?? prev.gender),
-            height: normalize(backend.height ?? localData.height ?? prev.height),
-            weight: normalize(backend.weight ?? localData.weight ?? prev.weight),
-            activity_level: normalize(backend.activity_level ?? localData.activity_level ?? prev.activity_level),
-
-            weight_goal: normalize(localData.weight_goal ?? prev.weight_goal),
-            body_fat: normalize(localData.body_fat ?? prev.body_fat),
-            lean_mass: normalize(localData.lean_mass ?? prev.lean_mass),
-            meals_per_day: normalize(localData.meals_per_day ?? prev.meals_per_day),
-            allergies: normalize(localData.allergies ?? prev.allergies),
-            dislikes: normalize(localData.dislikes ?? prev.dislikes),
-            diet_type: normalize(localData.diet_type ?? prev.diet_type),
-
-            diabetes: normalize(localData.diabetes ?? prev.diabetes ?? "none"),
-            hypertension: normalizeBool(localData.hypertension ?? prev.hypertension),
-            cholesterol: normalizeBool(localData.cholesterol ?? prev.cholesterol),
-            renal: normalizeBool(localData.renal ?? prev.renal),
-            celiac: normalizeBool(localData.celiac ?? prev.celiac),
-            lactose: normalizeBool(localData.lactose ?? prev.lactose),
-          }));
-        } else {
-          // backend error -> fallback to local
-          setForm((prev) => ({ ...prev, ...localData }));
-        }
-      } catch (err) {
-        console.warn("fetchProfile error:", err);
-        setForm((prev) => ({ ...prev, ...loadLocal() }));
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchProfile();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, API_URL]);
-
-  // handle input changes (unified)
-  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
-    const { name, type, value, checked } = e.target as any;
-    const next = type === "checkbox" ? checked : value;
-    setForm((prev) => ({ ...prev, [name]: next }));
-    dirtyRef.current = true;
-
-    // live validation for required original fields
-    if (["age", "gender", "height", "weight", "activity_level"].includes(name)) {
-      setErrors((prev) => {
-        const copy = { ...prev };
-        if (!next) copy[name] = "Campo obligatorio";
-        else delete copy[name];
-        return copy;
-      });
-    }
+  } catch (err) {
+    console.error("Error cargando perfil", err);
+  } finally {
+    setLoading(false);
   }
+}
 
-  // autosave to localStorage every 1s when dirty
-  useEffect(() => {
-    isMounted.current = true;
-    const interval = setInterval(() => {
-      if (dirtyRef.current) {
-        setSyncing(true);
-        try {
-          // persist to single local object
-          const toSave = { ...form };
-          // ensure safe primitives (avoid functions)
-          const safe = JSON.parse(JSON.stringify(toSave));
-          localStorage.setItem(LOCAL_KEY, JSON.stringify(safe));
-        } catch (e) {
-          console.warn("autosave failed", e);
-        } finally {
-          dirtyRef.current = false;
-          // small delay to show syncing state
-          setTimeout(() => setSyncing(false), 350);
-        }
-      }
-    }, 1000);
+async function saveProfile(method: "POST" | "PUT" = "POST") {
+  try {
+    const token = localStorage.getItem("token");
 
-    // save on unload
-    function handleBeforeUnload() {
-      try {
-        localStorage.setItem(LOCAL_KEY, JSON.stringify(form));
-      } catch {}
-    }
-    if (typeof window !== "undefined") {
-      window.addEventListener("beforeunload", handleBeforeUnload);
+    if (!token) {
+      alert("Tu sesión expiró. Inicia sesión nuevamente.");
+      return router.push("/auth/login");
     }
 
-    return () => {
-      clearInterval(interval);
-      if (typeof window !== "undefined") {
-        window.removeEventListener("beforeunload", handleBeforeUnload);
-      }
-      // final save
-      try {
-        localStorage.setItem(LOCAL_KEY, JSON.stringify(form));
-      } catch {}
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form]);
+    const res = await fetch(`${API_URL}/profile`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(form),
+    });
 
-  // manual save to backend (only original fields)
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setMessage(null as any);
+    // Verifica si la respuesta tiene JSON
+    let json = null;
+    try { json = await res.json(); } catch (e) { json = {}; }
 
-    // quick validation
-    const newErrors: Record<string, string> = {};
-    if (!form.age) newErrors.age = "Edad requerida";
-    if (!form.gender) newErrors.gender = "Género requerido";
-    if (!form.height) newErrors.height = "Altura requerida";
-    if (!form.weight) newErrors.weight = "Peso requerido";
-    if (!form.activity_level) newErrors.activity_level = "Nivel requerido";
+    // 🔥 TOKEN EXPIRADO
+    if (res.status === 401) {
+      alert("Tu sesión expiró. Debes iniciar sesión nuevamente.");
+      localStorage.removeItem("token");
+      return router.push("/auth/login");
+    }
 
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      setMessage({ type: "error", text: "Corrige los campos marcados" });
-      // open first section containing error
-      setOpenSection("antropometricos");
+    if (!res.ok) {
+      console.error("Error al guardar:", json);
+      alert(json.message || "Error al guardar el perfil");
       return;
     }
 
-    if (!API_URL || !token) {
-      setMessage({ type: "info", text: "Guardado localmente (sin backend)." });
-      return;
-    }
+    alert("Perfil guardado correctamente 🎉");
 
-    setMessage({ type: "info", text: "Enviando al servidor..." });
+  } catch (error) {
+    console.error("Error:", error);
+    alert("Error de conexión con el servidor");
+  }
+}
+
+
+
+  async function deleteProfile() {
+    if (!confirm("¿Seguro que deseas eliminar tu perfil? Esta acción no se puede deshacer.")) return;
 
     try {
+      const token = localStorage.getItem("token");
+
       const res = await fetch(`${API_URL}/profile`, {
-        method: "POST",
+        method: "DELETE",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          age: form.age,
-          gender: form.gender,
-          height: form.height,
-          weight: form.weight,
-          activity_level: form.activity_level,
-        }),
       });
 
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        const errMsg = data?.error?.message || data?.message || `Error ${res.status}`;
-        setMessage({ type: "error", text: errMsg });
-        return;
+      if (res.ok) {
+        alert("Perfil eliminado");
+        setForm(initialForm);
+        setEditing(false);
+        router.refresh();
+      } else {
+        const err = await res.json().catch(() => null);
+        alert(err?.error?.message || "No se pudo eliminar el perfil");
       }
-
-      setMessage({ type: "success", text: "✔️ Perfil guardado con éxito" });
-      // mark saved: clear dirty and persist to local
-      try {
-        localStorage.setItem(LOCAL_KEY, JSON.stringify(form));
-        dirtyRef.current = false;
-      } catch {}
     } catch (err) {
-      setMessage({ type: "error", text: "Error conectando con el servidor" });
+      console.error(err);
+      alert("Error del servidor");
     }
   }
 
-  // small utility to toggle accordion
-  const toggleSection = (key: string) => setOpenSection((prev) => (prev === key ? null : key));
-
-  // reset local data (optional)
-  function clearLocalData() {
-    if (typeof window === "undefined") return;
-    localStorage.removeItem(LOCAL_KEY);
-    setMessage({ type: "info", text: "Datos locales eliminados" });
-    setForm((prev) => ({
-      ...prev,
-      weight_goal: "",
-      body_fat: "",
-      lean_mass: "",
-      meals_per_day: "",
-      allergies: "",
-      dislikes: "",
-      diet_type: "",
-      diabetes: "none",
-      hypertension: false,
-      cholesterol: false,
-      renal: false,
-      celiac: false,
-      lactose: false,
-    }));
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  if (loading) {
+  if (loading)
     return (
-      <div className="flex justify-center items-center min-h-screen text-lg">
-        Cargando perfil...
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <p className="text-lg" style={{ color: "#3BAFDA" }}>
+          Cargando perfil...
+        </p>
       </div>
     );
-  }
 
-  /* ---------------- UI ---------------- */
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-start justify-between gap-4 mb-4">
+    <div className="p-6 max-w-4xl mx-auto text-default">
+      <header className="mb-6">
+        <h1 className="text-4xl font-bold" style={{ color: "#0A1A2F" }}>
+          Mi Perfil Nutricional
+        </h1>
+        <p className="mt-1 text-sm" style={{ color: "#475569" }}>
+          Completa tus datos para obtener recomendaciones personalizadas.
+        </p>
+      </header>
+
+      <main>
+        <Card title="Datos personales">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-[var(--color-dark,#0A1A2F)]">
-              Mi Perfil Nutricional
-            </h1>
-            <p className="text-sm text-[var(--color-gray,#6B7280)] mt-1">
-              Completa tus datos para obtener recomendaciones personalizadas.
-            </p>
+            <label className="block text-sm mb-1">Nombre completo</label>
+            <input
+              name="nombre"
+              placeholder="Nombre completo"
+              value={form.nombre}
+              onChange={handleChange}
+              className="input"
+            />
           </div>
 
-          <div className="flex items-center gap-2">
-            {syncing && (
-              <div className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded-full shadow-sm">
-                Sincronizando…
-              </div>
-            )}
-            <button
-              onClick={clearLocalData}
-              type="button"
-              className="text-sm px-3 py-1 border rounded-md text-gray-700 bg-white hover:bg-gray-100"
-            >
-              Borrar locales
-            </button>
+          <div>
+            <label className="block text-sm mb-1">Edad (años)</label>
+            <input name="edad" type="number" placeholder="Edad" value={form.edad} onChange={handleChange} className="input" />
           </div>
+
+          <div>
+            <label className="block text-sm mb-1">Sexo / Género</label>
+            <select name="sexo" value={form.sexo} onChange={handleChange} className="input">
+              <option value="">Seleccione</option>
+              <option value="masculino">Masculino</option>
+              <option value="femenino">Femenino</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Número de comidas al día</label>
+            <select name="comidas" value={form.comidas} onChange={handleChange} className="input">
+              <option value="">Seleccione</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select>
+          </div>
+        </Card>
+
+        <Card title="Datos antropométricos">
+          <div>
+            <label className="block text-sm mb-1">Peso actual (kg)</label>
+            <input name="peso" type="number" step="0.1" placeholder="Peso (kg)" value={form.peso} onChange={handleChange} className="input" />
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Altura / Talla (cm)</label>
+            <input name="altura" type="number" step="0.1" placeholder="Altura (cm)" value={form.altura} onChange={handleChange} className="input" />
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Objetivo</label>
+            <select name="objetivo" value={form.objetivo} onChange={handleChange} className="input">
+              <option value="">Seleccione</option>
+              <option value="subir">Subir de peso</option>
+              <option value="bajar">Bajar de peso</option>
+              <option value="mantener">Mantener peso</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Nivel de actividad fisica</label>
+            <select name="actividad" value={form.actividad} onChange={handleChange} className="input">
+              <option value="">Seleccione</option>
+              <option value="sedentario">Sedentario</option>
+              <option value="ligero">Ligero</option>
+              <option value="moderado">Moderado</option>
+              <option value="pesado">Pesado</option>
+            </select>
+          </div>
+        </Card>
+
+        <Card title="Datos clínicos y alergias">
+          <div>
+            <label className="block text-sm mb-1">Diagnóstico de glucosa</label>
+            <select name="glucosa" value={form.glucosa} onChange={handleChange} className="input">
+              <option value="">Seleccione</option>
+              <option value="normal">Normal</option>
+              <option value="prediabetes">Prediabetes</option>
+              <option value="diabetes1">Diabetes Tipo 1</option>
+              <option value="diabetes2">Diabetes Tipo 2</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Intolerancia a la lactosa</label>
+            <select name="intoleranciaLactosa" value={form.intoleranciaLactosa} onChange={handleChange} className="input">
+              <option value="">Seleccione</option>
+              <option value="no">No</option>
+              <option value="si">Sí</option>
+              <option value="leve">Sensibilidad leve</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Enfermedad celíaca / sensibilidad al gluten</label>
+            <select name="celiaco" value={form.celiaco} onChange={handleChange} className="input">
+              <option value="">Seleccione</option>
+              <option value="no">No</option>
+              <option value="si">Sí</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Otras alergias / intolerancias</label>
+            <input name="alergias" placeholder="Ej. mariscos, cacahuetes" value={form.alergias} onChange={handleChange} className="input" />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-sm mb-1">Condiciones crónicas (ej. hipertensión, renal, colesterol)</label>
+            <input name="condiciones" placeholder="Describe condiciones crónicas" value={form.condiciones} onChange={handleChange} className="input" />
+          </div>
+        </Card>
+
+        <Card title="Estado fisiológico (solo mujeres)">
+          <div>
+            <label className="block text-sm mb-1">Selecciona estado</label>
+            <select name="estadoFisiologico" value={form.estadoFisiologico} onChange={handleChange} className="input">
+              <option value="">Seleccione</option>
+              <option value="embarazo1">Embarazo - 1er trimestre</option>
+              <option value="embarazo2">Embarazo - 2do trimestre</option>
+              <option value="embarazo3">Embarazo - 3er trimestre</option>
+              <option value="lactancia">Lactancia</option>
+              <option value="menopausia">Menopausia</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm mb-1">Alimentos que deseas evitar</label>
+            <input name="evitarAlimentos" placeholder="Lista separada por comas" value={form.evitarAlimentos} onChange={handleChange} className="input" />
+          </div>
+        </Card>
+
+        {/* Botones */}
+        <div className="flex gap-4 mt-6">
+          <button type="button" onClick={() => saveProfile("POST")} className="btn-primary">
+            Guardar
+          </button>
+
+          <button type="button" onClick={() => saveProfile("PUT")} className="btn-secondary">
+            Actualizar
+          </button>
+
+          <button type="button" onClick={deleteProfile} className="btn-danger">
+            Eliminar
+          </button>
         </div>
+      </main>
 
-        {/* message */}
-        {message && (
-          <div
-            className={`mb-4 p-3 rounded-md font-medium ${
-              message.type === "success"
-                ? "bg-green-50 text-green-700"
-                : message.type === "error"
-                ? "bg-red-50 text-red-700"
-                : "bg-blue-50 text-blue-700"
-            }`}
-          >
-            {message.text}
-          </div>
-        )}
+      {/* Estilos (puedes pasarlos a tu CSS/Tailwind config) */}
+      <style jsx>{`
+        :root {
+          --azul-noche: #0A1A2F;
+          --celeste: #3BAFDA;
+          --plomo: #D1D5DB;
+          --negro: #000000;
+          --texto: #0b1f2e;
+        }
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* ANTHROPOMETRICS */}
-          <CardSection
-            title="Datos antropométricos"
-            open={openSection === "antropometricos"}
-            onToggle={() => toggleSection("antropometricos")}
-            hint="Información básica necesaria para el cálculo"
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Input
-                label="Edad (años)"
-                name="age"
-                type="number"
-                value={form.age ?? ""}
-                onChange={handleChange}
-                error={errors.age}
-                required
-              />
-              <Select
-                label="Género"
-                name="gender"
-                value={form.gender ?? ""}
-                onChange={handleChange}
-                options={[
-                  { value: "", label: "Seleccionar..." },
-                  { value: "female", label: "Femenino" },
-                  { value: "male", label: "Masculino" },
-                  { value: "non-binary", label: "No binario" },
-                ]}
-                error={errors.gender}
-                required
-              />
-              <Input
-                label="Altura (cm)"
-                name="height"
-                type="number"
-                value={form.height ?? ""}
-                onChange={handleChange}
-                error={errors.height}
-                required
-              />
-              <Input
-                label="Peso (kg)"
-                name="weight"
-                type="number"
-                value={form.weight ?? ""}
-                onChange={handleChange}
-                error={errors.weight}
-                required
-              />
-              <Select
-                label="Nivel de actividad"
-                name="activity_level"
-                value={form.activity_level ?? ""}
-                onChange={handleChange}
-                options={[
-                  { value: "", label: "Seleccionar..." },
-                  { value: "sedentary", label: "Sedentario" },
-                  { value: "light", label: "Leve" },
-                  { value: "moderate", label: "Moderado" },
-                  { value: "active", label: "Activo" },
-                  { value: "very_active", label: "Muy activo" },
-                ]}
-                error={errors.activity_level}
-                required
-              />
-            </div>
-          </CardSection>
+        .text-default {
+          color: var(--texto);
+        }
 
-          {/* OBJECTIVES */}
-          <CardSection
-            title="Objetivos y composición"
-            open={openSection === "objetivos"}
-            onToggle={() => toggleSection("objetivos")}
-            hint="Peso objetivo y composición corporal"
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Input label="Peso objetivo (kg)" name="weight_goal" type="number" value={form.weight_goal ?? ""} onChange={handleChange} />
-              <Input label="% Grasa corporal" name="body_fat" type="number" value={form.body_fat ?? ""} onChange={handleChange} />
-              <Input label="Masa magra (kg)" name="lean_mass" type="number" value={form.lean_mass ?? ""} onChange={handleChange} />
-              <Input label="Comidas al día" name="meals_per_day" type="number" value={form.meals_per_day ?? ""} onChange={handleChange} />
-            </div>
-          </CardSection>
+        .bg-card {
+          background: linear-gradient(180deg, rgba(0, 16, 239, 0.66), rgba(0, 16, 235, 0.39));
+        }
 
-          {/* HEALTH */}
-          <CardSection
-            title="Indicadores de salud"
-            open={openSection === "salud"}
-            onToggle={() => toggleSection("salud")}
-            hint="Condiciones que afectan recomendaciones"
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Select label="Diabetes" name="diabetes" value={form.diabetes ?? "none"} onChange={handleChange} options={[
-                {value:"none", label:"Sin diabetes"},
-                {value:"prediabetes", label:"Prediabetes"},
-                {value:"type1", label:"Tipo 1"},
-                {value:"type2", label:"Tipo 2"},
-              ]} />
-              <Checkbox label="Hipertensión" name="hypertension" checked={!!form.hypertension} onChange={handleChange} />
-              <Checkbox label="Colesterol alto" name="cholesterol" checked={!!form.cholesterol} onChange={handleChange} />
-              <Checkbox label="Enfermedad renal" name="renal" checked={!!form.renal} onChange={handleChange} />
-              <Checkbox label="Celiaquía" name="celiac" checked={!!form.celiac} onChange={handleChange} />
-              <Checkbox label="Intolerancia a la lactosa" name="lactose" checked={!!form.lactose} onChange={handleChange} />
-            </div>
-          </CardSection>
+        .border-card {
+          border: 1px solid rgba(17, 2, 113, 0.12);
+        }
 
-          {/* PREFERENCES */}
-          <CardSection title="Preferencias alimentarias" open={openSection === "preferencias"} onToggle={() => toggleSection("preferencias")} hint="Alergias, dietas y gustos">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Input label="Alergias (coma)" name="allergies" value={form.allergies ?? ""} onChange={handleChange} />
-              <Input label="Alimentos que no te gustan" name="dislikes" value={form.dislikes ?? ""} onChange={handleChange} />
-              <Input label="Tipo de dieta (vegana, keto…)" name="diet_type" value={form.diet_type ?? ""} onChange={handleChange} />
-            </div>
-          </CardSection>
+        .shadow-card {
+          box-shadow: 0 6px 18px rgba(10, 26, 47, 0.35);
+        }
 
-          <div className="flex flex-col sm:flex-row gap-3">
-            <button
-              type="submit"
-              className="flex-1 w-full bg-[var(--color-primary,#00B6FF)] text-white py-3 rounded-xl font-semibold shadow hover:opacity-95 transition"
-            >
-              Guardar Cambios
-            </button>
-            <button
-              type="button"
-              onClick={() => { setOpenSection(null); setMessage({ type: "info", text: "Secciones cerradas" }); }}
-              className="px-4 py-3 border rounded-xl bg-white"
-            >
-              Cerrar secciones
-            </button>
-          </div>
-        </form>
-      </div>
+        .input {
+          width: 100%;
+          background: transparent;
+          border: 1px solid rgba(9, 7, 111, 0.96);
+          padding: 10px 12px;
+          border-radius: 10px;
+          color: #a5a0a0bd;
+          outline: none;
+        }
+
+        .input::placeholder {
+          color: rgba(183,197,209,0.7);
+        }
+
+        .input:focus {
+          box-shadow: 0 4px 14px rgba(59,175,218,0.12);
+          border-color: var(--celeste);
+        }
+
+        .text-accent {
+          color: var(--celeste);
+        }
+
+        .btn-primary {
+          background: #00fa15ff;
+          color: #f3f3f3fc;
+          padding: 10px 18px;
+          border-radius: 10px;
+          font-weight: 700;
+          transition: transform 160ms ease, box-shadow 160ms ease;
+          border: none;
+        }
+
+        .btn-primary:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.95);
+        }
+
+        .btn-secondary {
+          background: #32b4f5ff;
+          color: #f3f3f3fc;
+          padding: 10px 18px;
+          border-radius: 10px;
+          font-weight: 700;
+          transition: transform 160ms ease, box-shadow 160ms ease;
+          border: none;
+        }
+
+        .btn-secondary:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 6px 18px rgba(0, 17, 246, 0.61);
+        }
+
+        .btn-danger {
+          background: #e03b3b;
+          color: white;
+          padding: 10px 18px;
+          border-radius: 10px;
+          font-weight: 700;
+          transition: transform 160ms ease, box-shadow 160ms ease;
+          border: none;
+        }
+
+        .btn-danger:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 6px 18px rgba(224,59,59,0.25);
+        }
+
+        @media (max-width: 768px) {
+          .shadow-card {
+            box-shadow: none;
+          }
+        }
+      `}</style>
     </div>
-  );
-}
-
-/* ---------------- UI Subcomponents ---------------- */
-
-function CardSection({ title, children, open, onToggle, hint }: any) {
-  return (
-    <section className="bg-white p-4 rounded-2xl shadow-sm border">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center justify-between gap-3"
-        aria-expanded={open ? "true" : "false"}
-      >
-        <div>
-          <h3 className="text-lg font-semibold text-[var(--color-dark,#0A1A2F)]">{title}</h3>
-          {hint && <p className="text-xs text-[var(--color-gray,#6B7280)] mt-1">{hint}</p>}
-        </div>
-        <div className="text-sm text-[var(--color-gray,#6B7280)]">{open ? "Ocultar" : "Mostrar"}</div>
-      </button>
-
-      <div className={`mt-3 transition-all ${open ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0 overflow-hidden"}`}>
-        {children}
-      </div>
-    </section>
-  );
-}
-
-function Input({ label, error, ...props }: any) {
-  const hasError = !!error;
-  return (
-    <label className="block">
-      <div className="flex justify-between items-center mb-1">
-        <span className={`text-sm font-medium ${hasError ? "text-red-600" : "text-[var(--color-dark,#0A1A2F)]"}`}>{label}</span>
-        {hasError && <span className="text-xs text-red-600">{error}</span>}
-      </div>
-
-      <input
-        {...props}
-        value={props.value ?? ""}
-        onChange={props.onChange}
-        className={`mt-1 p-3 w-full border rounded-xl shadow-sm bg-white focus:ring-2 ${
-          hasError ? "border-red-300 focus:ring-red-200" : "border-gray-200 focus:ring-[var(--color-primary,#00B6FF)]"
-        }`}
-      />
-    </label>
-  );
-}
-
-function Select({ label, options = [], error, ...props }: any) {
-  const hasError = !!error;
-  return (
-    <label className="block">
-      <div className="flex justify-between items-center mb-1">
-        <span className={`text-sm font-medium ${hasError ? "text-red-600" : "text-[var(--color-dark,#0A1A2F)]"}`}>{label}</span>
-        {hasError && <span className="text-xs text-red-600">{error}</span>}
-      </div>
-
-      <select
-        {...props}
-        value={props.value ?? ""}
-        onChange={props.onChange}
-        className={`mt-1 p-3 w-full border rounded-xl shadow-sm bg-white focus:ring-2 ${
-          hasError ? "border-red-300 focus:ring-red-200" : "border-gray-200 focus:ring-[var(--color-primary,#00B6FF)]"
-        }`}
-      >
-        {Array.isArray(options) &&
-          options.map((o: any) => (
-            <option key={String(o.value)} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-      </select>
-    </label>
-  );
-}
-
-function Checkbox({ label, checked, ...props }: any) {
-  return (
-    <label className="flex items-center gap-3">
-      <input
-        {...props}
-        type="checkbox"
-        checked={!!checked}
-        onChange={props.onChange}
-        className="w-5 h-5"
-      />
-      <span className="text-[var(--color-dark,#0A1A2F)]">{label}</span>
-    </label>
   );
 }
